@@ -1,6 +1,5 @@
 #include <rpcWiFi.h>
 #include <TFT_eSPI.h>
-#include <SPI.h>
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -9,7 +8,8 @@ enum Screen
   WIFI_SCAN,
   PASSWORD_INPUT,
   CONNECTING,
-  HOME
+  TRACKPAD_BANKING,
+  PIN_INPUT
 };
 Screen currentScreen = WIFI_SCAN;
 
@@ -21,6 +21,13 @@ int totalNetworks = 0;
 bool useUpperCase = false; // Toggle for Shift key
 bool showPassword = false; // Toggle for password visibility
 bool symbolsMode = false;  // Toggle for symbols/letters mode
+
+// PIN authentication variables
+String enteredPIN = "";
+String correctPIN = "2024";           // Hardcoded PIN
+bool showPINAsterisks = true;         // Always show asterisks for PIN
+bool isAwaitingPIN = false;           // Flag to track if we're waiting for PIN
+bool pinTransactionIsWithdraw = true; // Track transaction type for PIN entry
 
 // QWERTY Keyboard layout (letters and numbers)
 char baseKeys[4][10] = {
@@ -45,36 +52,68 @@ int lastCursorY = 0;
 bool keyboardInitialized = false;
 
 // Android-style colors
-#define KEYBOARD_BG 0x1C1C    // Dark gray background
-#define KEY_NORMAL 0x4A49     // Normal key color
-#define KEY_PRESSED 0x5AEB    // Pressed key color (blue)
-#define KEY_SPECIAL 0x39E7    // Special keys color
-#define KEY_SYMBOLS 0x6B4D    // Symbols mode key color
-#define TEXT_PRIMARY 0xFFFF   // White text
-#define TEXT_SECONDARY 0xC618 // Light gray text
-#define ACCENT_COLOR 0x5AEB   // Blue accent
-#define INPUT_BG 0x2945       // Input field background
+#define KEYBOARD_BG 0x1C1C     // Dark gray background
+#define KEY_NORMAL 0x4A49      // Normal key color
+#define KEY_PRESSED 0x5AEB     // Pressed key color (blue)
+#define KEY_SPECIAL 0x39E7     // Special keys color
+#define KEY_SYMBOLS 0x6B4D     // Symbols mode key color
+#define TEXT_PRIMARY 0xFFFF    // White text
+#define TEXT_SECONDARY 0xC618  // Light gray text
+#define ACCENT_COLOR 0x5AEB    // Blue accent
+#define INPUT_BG 0x2945        // Input field background
+#define WITHDRAW_COLOR 0xF800  // Red for withdraw
+#define DEPOSIT_COLOR 0x07E0   // Green for deposit
+#define PIN_ERROR_COLOR 0xF800 // Red for PIN errors
 
 // WiFi network display constants
 #define NETWORK_HEIGHT 35      // Fixed height for each network item (increased from ~26)
 #define NETWORK_TEXT_SIZE 2    // Fixed text size for network names
 #define MAX_VISIBLE_NETWORKS 5 // Reduced to fit bigger items
 
-// Function prototypes
+// Trackpad variables
+String trackpadAmount = "";
+String accountBalance = "1250.75"; // Mock balance
+int trackpadCursorX = 0;
+int trackpadCursorY = 0;
+int lastTrackpadCursorX = 0;
+int lastTrackpadCursorY = 0;
+bool trackpadInitialized = false;
+bool isWithdrawMode = true; // true for withdraw, false for deposit
+
+// Trackpad layout (4x4 grid including function keys)
+char trackpadKeys[4][4] = {
+    {'1', '2', '3', 'W'}, // W for Withdraw
+    {'4', '5', '6', 'D'}, // D for Deposit
+    {'7', '8', '9', 'C'}, // C for Clear
+    {'.', '0', '#', 'E'}  // E for Execute/Enter
+};
+
+// ────────────── Forward Declarations ──────────────
 void drawWiFiScreen();
-void drawAllNetworks();
-void drawSingleNetwork(int index);
-void drawSignalBars(int x, int y, int rssi, uint16_t color);
 void handleWiFiSelection();
 void handleKeyboardInput();
 void connectToWiFi();
+void handleTrackpadInput();
+void handlePINInput();
+void createNewUserAccount();
+void logTransactionToFirestore(String type, double amount, double balanceAfter);
+void drawAllNetworks();
+void drawSingleNetwork(int index);
+void drawSignalBars(int x, int y, int rssi, uint16_t color);
 void drawKeyboard();
-void updatePasswordDisplay();
-void updateAllKeys();
 void updateModeIndicator();
 void drawConnectingScreen();
-void drawHomeScreen();
+void drawTrackpadScreen();
 void drawErrorScreen();
+void updatePINDisplay();
+void validatePIN();
+void showPINError(String message);
+void showPINSuccess();
+void executeTransaction(float amount, bool isWithdraw);
+void updateTransactionModeDisplay();
+void drawTrackpad();
+void drawSingleTrackpadKey(int x, int y, int keyW, int keyH, int keyRadius, int startX, int startY, int keySpacing);
+void showTransactionMessage(String message, uint16_t color);
 
 void setup()
 {
@@ -115,8 +154,12 @@ void loop()
   case CONNECTING:
     connectToWiFi();
     break;
-  case HOME:
-    break; // Nothing more here
+  case TRACKPAD_BANKING:
+    handleTrackpadInput();
+    break;
+  case PIN_INPUT:
+    handlePINInput();
+    break;
   }
 }
 
@@ -400,14 +443,14 @@ void drawSingleKey(int x, int y, int keyW, int keyH, int keyRadius, int startX, 
 
 void updateKeyboardCursor()
 {
-  // Smaller key dimensions
-  int keyW = 22;
-  int keyH = 16;
-  int keyRadius = 2;
-  int keySpacing = 1;
-  int totalKeyboardWidth = 10 * keyW + 9 * keySpacing;
+  // Keyboard key dimensions (must match drawKeyboard values)
+  int keyW = 29;
+  int keyH = 24;
+  int keyRadius = 3;
+  int totalKeyboardWidth = 10 * keyW + 9 * 2;
   int startX = (320 - totalKeyboardWidth) / 2;
   int startY = 85;
+  int keySpacing = 2;
 
   // Redraw the previously selected key
   drawSingleKey(lastCursorX, lastCursorY, keyW, keyH, keyRadius, startX, startY, keySpacing);
@@ -467,14 +510,14 @@ void updateCursor()
 
 void updateAllKeys()
 {
-  // Update all keys when switching modes (smaller)
-  int keyW = 22;
-  int keyH = 16;
-  int keyRadius = 2;
-  int keySpacing = 1;
-  int totalKeyboardWidth = 10 * keyW + 9 * keySpacing;
+  // Update all keys when switching modes
+  int keyW = 29;
+  int keyH = 24;
+  int keyRadius = 3;
+  int totalKeyboardWidth = 10 * keyW + 9 * 2;
   int startX = (320 - totalKeyboardWidth) / 2;
   int startY = 85;
+  int keySpacing = 2;
 
   // Redraw all keys
   for (int y = 0; y < 4; y++)
@@ -531,20 +574,143 @@ void drawKeyboard()
   // Password input field - centered
   updatePasswordDisplay();
 
-  // Keyboard keys - centered and smaller
-  int keyW = 22;
-  int keyH = 16;
-  int keyRadius = 2;
-  int keySpacing = 1;
-  int totalKeyboardWidth = 10 * keyW + 9 * keySpacing; // 10 keys + 9 spaces
+  // Keyboard keys - centered and bigger
+  int keyW = 29;
+  int keyH = 24;
+  int keyRadius = 3;
+  int totalKeyboardWidth = 10 * keyW + 9 * 2; // 10 keys + 9 spaces
   int startX = (320 - totalKeyboardWidth) / 2;
   int startY = 85;
+  int keySpacing = 2;
 
   for (int y = 0; y < 4; y++)
   {
     for (int x = 0; x < 10; x++)
     {
-      drawSingleKey(x, y, keyW, keyH, keyRadius, startX, startY, keySpacing);
+      int posX = startX + x * (keyW + keySpacing);
+      int posY = startY + y * (keyH + keySpacing);
+
+      char key;
+      if (symbolsMode)
+      {
+        key = symbolKeys[y][x];
+      }
+      else
+      {
+        key = baseKeys[y][x];
+      }
+
+      // Apply case transformation for letters mode
+      char displayKey = key;
+      if (!symbolsMode && useUpperCase && key >= 'a' && key <= 'z')
+      {
+        displayKey = key - 32;
+      }
+
+      // Determine key colors and style
+      uint16_t keyBg, keyBorder, textColor;
+      bool isSelected = (x == cursorX && y == cursorY);
+      bool isSpecialKey = false;
+
+      if (!symbolsMode)
+      {
+        isSpecialKey = (key == '^' || key == '<' || key == 'E' || key == '@');
+      }
+      else
+      {
+        isSpecialKey = (key == 'S' || key == '_');
+      }
+
+      if (isSelected)
+      {
+        keyBg = KEY_PRESSED;
+        keyBorder = 0x7BEF;
+        textColor = TEXT_PRIMARY;
+      }
+      else if (isSpecialKey)
+      {
+        keyBg = KEY_SPECIAL;
+        keyBorder = 0x4A49;
+        textColor = TEXT_PRIMARY;
+      }
+      else if (symbolsMode)
+      {
+        keyBg = KEY_SYMBOLS;
+        keyBorder = 0x6B4D;
+        textColor = TEXT_PRIMARY;
+      }
+      else
+      {
+        keyBg = KEY_NORMAL;
+        keyBorder = 0x6B4D;
+        textColor = TEXT_PRIMARY;
+      }
+
+      // Draw key with shadow effect
+      if (!isSelected)
+      {
+        tft.fillRoundRect(posX + 1, posY + 2, keyW, keyH, keyRadius, 0x2104);
+      }
+
+      tft.fillRoundRect(posX, posY, keyW, keyH, keyRadius, keyBg);
+      tft.drawRoundRect(posX, posY, keyW, keyH, keyRadius, keyBorder);
+
+      // Add subtle gradient effect for selected key
+      if (isSelected)
+      {
+        tft.drawRoundRect(posX + 1, posY + 1, keyW - 2, keyH - 2, keyRadius - 1, 0x9CF3);
+      }
+
+      // Draw key label (centered)
+      tft.setTextColor(textColor, keyBg);
+      tft.setTextSize(1);
+
+      // Calculate text position for centering
+      int textX = posX + keyW / 2;
+      int textY = posY + keyH / 2 - 4;
+
+      // Special key labels
+      if (!symbolsMode)
+      {
+        if (key == '^')
+        {
+          tft.setTextColor(useUpperCase ? 0xFFE0 : textColor, keyBg);
+          tft.drawString("SFT", textX - 9, textY);
+        }
+        else if (key == '<')
+        {
+          tft.drawString("DEL", textX - 9, textY);
+        }
+        else if (key == 'E')
+        {
+          // Eye key for show/hide password
+          tft.setTextColor(showPassword ? 0xFFE0 : textColor, keyBg);
+          tft.drawString("EYE", textX - 9, textY);
+        }
+        else if (key == '@')
+        {
+          tft.drawString("SYM", textX - 9, textY);
+        }
+        else
+        {
+          tft.drawChar(displayKey, textX - 3, textY);
+        }
+      }
+      else
+      {
+        if (key == 'S')
+        {
+          tft.drawString("ABC", textX - 9, textY);
+        }
+        else if (key == '_')
+        {
+          tft.drawString("SPC", textX - 9, textY);
+        }
+        else
+        {
+          tft.drawChar(key, textX - 3, textY);
+        }
+      }
     }
   }
 
@@ -693,6 +859,17 @@ void handleKeyboardInput()
     delay(200);
   }
 
+  if (digitalRead(WIO_KEY_A) == LOW)
+  {
+    // Backspace function moved to A button
+    if (inputPassword.length() > 0)
+    {
+      inputPassword.remove(inputPassword.length() - 1);
+      updatePasswordDisplay();
+    }
+    delay(200);
+  }
+
   if (digitalRead(WIO_KEY_B) == LOW)
   {
     // Go back to WiFi selection screen
@@ -757,8 +934,16 @@ void connectToWiFi()
 
   if (WiFi.status() == WL_CONNECTED)
   {
-    currentScreen = HOME;
-    drawHomeScreen();
+    // Go directly to banking terminal after successful WiFi connection
+    trackpadAmount = "";
+    trackpadCursorX = 0;
+    trackpadCursorY = 0;
+    lastTrackpadCursorX = 0;
+    lastTrackpadCursorY = 0;
+    trackpadInitialized = false;
+    isWithdrawMode = true; // Default to withdraw
+    currentScreen = TRACKPAD_BANKING;
+    drawTrackpadScreen();
   }
   else
   {
@@ -779,7 +964,7 @@ void drawErrorScreen()
   // Wait for any button press
   while (true)
   {
-    if (digitalRead(WIO_5S_PRESS) == LOW || digitalRead(WIO_KEY_B) == LOW || digitalRead(WIO_KEY_C) == LOW)
+    if (digitalRead(WIO_5S_PRESS) == LOW || digitalRead(WIO_KEY_A) == LOW || digitalRead(WIO_KEY_B) == LOW || digitalRead(WIO_KEY_C) == LOW)
     {
       keyboardInitialized = false;
       currentScreen = PASSWORD_INPUT;
@@ -790,25 +975,788 @@ void drawErrorScreen()
   }
 }
 
-// ────────────── Home Screen ──────────────
-void drawHomeScreen()
+// ────────────── PIN Input Screen ──────────────
+void drawPINScreen()
+{
+  tft.fillScreen(KEYBOARD_BG);
+
+  // Title bar
+  tft.fillRect(0, 0, 320, 30, ACCENT_COLOR);
+  tft.setTextColor(TEXT_PRIMARY, ACCENT_COLOR);
+  tft.setTextSize(1);
+  String transactionType = pinTransactionIsWithdraw ? "Withdraw" : "Deposit";
+  tft.drawString("Enter PIN for " + transactionType, 10, 8);
+
+  // Security message
+  tft.setTextColor(TEXT_PRIMARY, KEYBOARD_BG);
+  tft.setTextSize(1);
+  tft.drawString("Enter your 4-digit PIN", 100, 32);
+
+  // PIN input field - centered
+  updatePINDisplay();
+
+  // PIN Numeric keypad - 3x4 grid plus special keys
+  int keyW = 50;
+  int keyH = 35;
+  int keyRadius = 5;
+  int totalKeyboardWidth = 3 * keyW + 2 * 8; // 3 keys + 2 spaces
+  int startX = (320 - totalKeyboardWidth) / 2;
+  int startY = 85;
+  int keySpacing = 8;
+
+  // PIN keypad layout (3x4 plus special keys)
+  char pinKeys[5][3] = {
+      {'1', '2', '3'},
+      {'4', '5', '6'},
+      {'7', '8', '9'},
+      {'C', '0', '<'}, // C=Clear, <=Backspace
+      {'B', 'E', 'S'}  // B=Back, E=Enter, S=Show/Hide (not used for PIN)
+  };
+
+  for (int y = 0; y < 5; y++)
+  {
+    for (int x = 0; x < 3; x++)
+    {
+      int posX = startX + x * (keyW + keySpacing);
+      int posY = startY + y * (keyH + keySpacing);
+
+      char key = pinKeys[y][x];
+
+      // Determine key colors and style
+      uint16_t keyBg, keyBorder, textColor;
+      bool isSelected = (x == cursorX && y == cursorY);
+      bool isSpecialKey = (key == 'C' || key == '<' || key == 'B' || key == 'E' || key == 'S');
+
+      if (isSelected)
+      {
+        keyBg = KEY_PRESSED;
+        keyBorder = 0x7BEF;
+        textColor = TEXT_PRIMARY;
+      }
+      else if (isSpecialKey)
+      {
+        keyBg = KEY_SPECIAL;
+        keyBorder = 0x4A49;
+        textColor = TEXT_PRIMARY;
+      }
+      else
+      {
+        keyBg = KEY_NORMAL;
+        keyBorder = 0x6B4D;
+        textColor = TEXT_PRIMARY;
+      }
+
+      // Draw key with shadow effect
+      if (!isSelected)
+      {
+        tft.fillRoundRect(posX + 2, posY + 3, keyW, keyH, keyRadius, 0x2104);
+      }
+
+      tft.fillRoundRect(posX, posY, keyW, keyH, keyRadius, keyBg);
+      tft.drawRoundRect(posX, posY, keyW, keyH, keyRadius, keyBorder);
+
+      // Add subtle gradient effect for selected key
+      if (isSelected)
+      {
+        tft.drawRoundRect(posX + 1, posY + 1, keyW - 2, keyH - 2, keyRadius - 1, 0x9CF3);
+      }
+
+      // Draw key label (centered)
+      tft.setTextColor(textColor, keyBg);
+      tft.setTextSize(2);
+
+      // Calculate text position for centering
+      int textX = posX + keyW / 2;
+      int textY = posY + keyH / 2 - 8;
+
+      // Special key labels
+      if (key == 'C')
+      {
+        tft.setTextSize(1);
+        tft.drawString("CLR", textX - 12, textY + 4);
+      }
+      else if (key == '<')
+      {
+        tft.setTextSize(1);
+        tft.drawString("DEL", textX - 12, textY + 4);
+      }
+      else if (key == 'B')
+      {
+        tft.setTextSize(1);
+        tft.drawString("BACK", textX - 15, textY + 4);
+      }
+      else if (key == 'E')
+      {
+        tft.setTextSize(1);
+        tft.drawString("ENTER", textX - 18, textY + 4);
+      }
+      else if (key == 'S')
+      {
+        // This key is not used in PIN mode, make it inactive
+        keyBg = 0x2104;
+        tft.fillRoundRect(posX, posY, keyW, keyH, keyRadius, keyBg);
+        tft.setTextSize(1);
+        tft.setTextColor(0x4208, keyBg);
+        tft.drawString("---", textX - 12, textY + 4);
+      }
+      else
+      {
+        tft.drawChar(key, textX - 8, textY);
+      }
+    }
+  }
+
+  // Bottom action bar
+  tft.fillRect(0, 210, 320, 30, 0x2945);
+  tft.setTextColor(TEXT_SECONDARY, 0x2945);
+  tft.setTextSize(1);
+  tft.drawString("Navigate with D-pad", 15, 218);
+  tft.drawString("CENTER to select", 150, 218);
+  tft.drawString("A:Clear", 250, 218);
+
+  keyboardInitialized = true;
+}
+
+void updatePINDisplay()
+{
+  // Clear the PIN input area
+  tft.fillRoundRect(10, 50, 300, 25, 4, INPUT_BG);
+  tft.drawRoundRect(10, 50, 300, 25, 4, ACCENT_COLOR);
+
+  // Always show asterisks for PIN
+  String displayPIN = "";
+  for (int i = 0; i < enteredPIN.length(); i++)
+  {
+    displayPIN += "*";
+  }
+
+  tft.setTextColor(TEXT_PRIMARY, INPUT_BG);
+  tft.setTextSize(2);
+
+  // Center the PIN display
+  int textWidth = displayPIN.length() * 12;
+  int centerX = 160 - textWidth / 2;
+  tft.drawString(displayPIN, centerX, 55);
+}
+
+void updatePINCursor()
+{
+  // Only update cursor blinking
+  int textWidth = enteredPIN.length() * 12;
+  int centerX = 160 - textWidth / 2;
+  int cursorPos = centerX + textWidth;
+
+  // Blink cursor
+  if ((millis() / 500) % 2 == 0)
+  {
+    tft.fillRect(cursorPos, 55, 2, 15, TEXT_PRIMARY); // Show cursor
+  }
+  else
+  {
+    tft.fillRect(cursorPos, 55, 2, 15, INPUT_BG); // Hide cursor
+  }
+}
+
+void handlePINInput()
+{
+  // Update cursor blinking
+  static unsigned long lastCursorUpdate = 0;
+  if (millis() - lastCursorUpdate > 50)
+  {
+    updatePINCursor();
+    lastCursorUpdate = millis();
+  }
+
+  // PIN keypad layout (3x4 plus special keys)
+  char pinKeys[5][3] = {
+      {'1', '2', '3'},
+      {'4', '5', '6'},
+      {'7', '8', '9'},
+      {'C', '0', '<'}, // C=Clear, <=Backspace
+      {'B', 'E', 'S'}  // B=Back, E=Enter, S=Show/Hide (not used for PIN)
+  };
+
+  if (digitalRead(WIO_5S_UP) == LOW)
+  {
+    cursorY = (cursorY - 1 + 5) % 5;
+    if (keyboardInitialized)
+    {
+      drawPINScreen(); // Redraw entire screen for simplicity
+    }
+    delay(150);
+  }
+  if (digitalRead(WIO_5S_DOWN) == LOW)
+  {
+    cursorY = (cursorY + 1) % 5;
+    if (keyboardInitialized)
+    {
+      drawPINScreen(); // Redraw entire screen for simplicity
+    }
+    delay(150);
+  }
+  if (digitalRead(WIO_5S_LEFT) == LOW)
+  {
+    cursorX = (cursorX - 1 + 3) % 3;
+    if (keyboardInitialized)
+    {
+      drawPINScreen(); // Redraw entire screen for simplicity
+    }
+    delay(150);
+  }
+  if (digitalRead(WIO_5S_RIGHT) == LOW)
+  {
+    cursorX = (cursorX + 1) % 3;
+    if (keyboardInitialized)
+    {
+      drawPINScreen(); // Redraw entire screen for simplicity
+    }
+    delay(150);
+  }
+
+  if (digitalRead(WIO_5S_PRESS) == LOW)
+  {
+    char key = pinKeys[cursorY][cursorX];
+
+    if (key >= '0' && key <= '9')
+    {
+      // Add digit to PIN (max 4 digits)
+      if (enteredPIN.length() < 4)
+      {
+        enteredPIN += key;
+        updatePINDisplay();
+      }
+    }
+    else if (key == '<')
+    {
+      // Backspace
+      if (enteredPIN.length() > 0)
+      {
+        enteredPIN.remove(enteredPIN.length() - 1);
+        updatePINDisplay();
+      }
+    }
+    else if (key == 'C')
+    {
+      // Clear all
+      enteredPIN = "";
+      updatePINDisplay();
+    }
+    else if (key == 'E')
+    {
+      // Enter - validate PIN
+      if (enteredPIN.length() == 4)
+      {
+        validatePIN();
+      }
+      else
+      {
+        showPINError("PIN must be 4 digits!");
+      }
+    }
+    else if (key == 'B')
+    {
+      // Back to banking screen
+      enteredPIN = "";
+      isAwaitingPIN = false;
+      currentScreen = TRACKPAD_BANKING;
+      drawTrackpadScreen();
+    }
+    delay(200);
+  }
+
+  if (digitalRead(WIO_KEY_A) == LOW)
+  {
+    // Clear PIN
+    enteredPIN = "";
+    updatePINDisplay();
+    delay(200);
+  }
+
+  if (digitalRead(WIO_KEY_B) == LOW)
+  {
+    // Back to banking screen
+    enteredPIN = "";
+    isAwaitingPIN = false;
+    currentScreen = TRACKPAD_BANKING;
+    drawTrackpadScreen();
+    delay(300);
+  }
+
+  if (digitalRead(WIO_KEY_C) == LOW)
+  {
+    // Enter PIN
+    if (enteredPIN.length() == 4)
+    {
+      validatePIN();
+    }
+    else
+    {
+      showPINError("PIN must be 4 digits!");
+    }
+    delay(300);
+  }
+}
+
+void validatePIN()
+{
+  if (enteredPIN == correctPIN)
+  {
+    // PIN correct - proceed with transaction
+    showPINSuccess();
+    // Process the pending transaction
+    float amount = trackpadAmount.toFloat();
+    if (amount > 0)
+    {
+      executeTransaction(amount, pinTransactionIsWithdraw);
+    }
+
+    // Return to banking screen
+    enteredPIN = "";
+    isAwaitingPIN = false;
+    currentScreen = TRACKPAD_BANKING;
+    drawTrackpadScreen();
+  }
+  else
+  {
+    // PIN incorrect
+    showPINError("Incorrect PIN! Try again.");
+    enteredPIN = "";
+    updatePINDisplay();
+  }
+}
+
+void showPINError(String message)
+{
+  // Show error message temporarily
+  tft.fillRect(10, 75, 300, 15, TFT_BLACK);
+  tft.setTextColor(PIN_ERROR_COLOR, TFT_BLACK);
+  tft.setTextSize(1);
+  int textWidth = message.length() * 6;
+  int centerX = 160 - textWidth / 2;
+  tft.drawString(message, centerX, 77);
+  delay(2000);
+  tft.fillRect(10, 75, 300, 15, TFT_BLACK); // Clear error message
+}
+
+void showPINSuccess()
+{
+  // Show success message temporarily
+  tft.fillRect(10, 75, 300, 15, TFT_BLACK);
+  tft.setTextColor(DEPOSIT_COLOR, TFT_BLACK);
+  tft.setTextSize(1);
+  String message = "PIN Correct!";
+  int textWidth = message.length() * 6;
+  int centerX = 160 - textWidth / 2;
+  tft.drawString(message, centerX, 77);
+  delay(1500);
+}
+
+void executeTransaction(float amount, bool isWithdraw)
+{
+  float balance = accountBalance.toFloat();
+
+  if (isWithdraw)
+  {
+    if (amount > balance)
+    {
+      // This shouldn't happen as we check before PIN entry, but just in case
+      return;
+    }
+    balance -= amount;
+    accountBalance = String(balance, 2);
+  }
+  else
+  {
+    balance += amount;
+    accountBalance = String(balance, 2);
+  }
+
+  // Clear amount after successful transaction
+  trackpadAmount = "";
+}
+
+// ────────────── Trackpad Banking Screen ──────────────
+void drawTrackpadScreen()
 {
   tft.fillScreen(TFT_BLACK);
 
-  // Success icon area
-  tft.fillCircle(160, 80, 40, 0x07E0); // Green circle
-  tft.setTextColor(TEXT_PRIMARY, 0x07E0);
-  tft.setTextSize(3);
-  tft.drawString("✓", 150, 65);
-
-  // Success message
-  tft.setTextColor(0x07E0, TFT_BLACK);
-  tft.setTextSize(2);
-  tft.drawString("Connected!", 100, 140);
-
-  // Connection details
-  tft.setTextColor(TEXT_PRIMARY, TFT_BLACK);
+  // Title bar - more compact
+  tft.fillRect(0, 0, 320, 25, ACCENT_COLOR);
+  tft.setTextColor(TEXT_PRIMARY, ACCENT_COLOR);
   tft.setTextSize(1);
-  tft.drawString("Network: " + selectedSSID, 10, 170);
-  tft.drawString("IP Address: " + WiFi.localIP().toString(), 10, 185);
+  tft.drawString("Banking Terminal", 10, 6);
+
+  // Connection status - show WiFi connection info
+  tft.setTextColor(0x07E0, TFT_BLACK); // Green color
+  tft.setTextSize(1);
+  tft.drawString("Connected: " + selectedSSID, 170, 6);
+
+  // Account balance display - smaller and positioned higher
+  tft.fillRoundRect(10, 30, 150, 18, 3, 0x2945);
+  tft.setTextColor(0x07E0, 0x2945); // Green for balance
+  tft.setTextSize(1);
+  tft.drawString("Bal: $" + accountBalance, 15, 36);
+
+  // Transaction mode indicator - positioned to the right, smaller
+  updateTransactionModeDisplay();
+
+  // Amount input display area - smaller and positioned higher
+  tft.fillRoundRect(10, 53, 300, 22, 3, INPUT_BG);
+  tft.drawRoundRect(10, 53, 300, 22, 3, ACCENT_COLOR);
+
+  // Transaction status area - more compact
+  tft.fillRect(10, 80, 300, 12, TFT_BLACK);
+  tft.setTextColor(TEXT_SECONDARY, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.drawString("W=Withdraw D=Deposit C=Clear E=Execute", 10, 82);
+
+  // Trackpad area - positioned to show all buttons clearly
+  drawTrackpad();
+
+  // Additional info below trackpad
+  tft.fillRect(10, 205, 300, 12, TFT_BLACK);
+  tft.setTextColor(TEXT_SECONDARY, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.drawString("PIN required for transactions", 10, 207);
+
+  // Instructions - bottom bar
+  tft.fillRect(0, 220, 320, 20, 0x2945);
+  tft.setTextColor(TEXT_SECONDARY, 0x2945);
+  tft.setTextSize(1);
+  tft.drawString("A:Clear B:WiFi C:Process", 10, 226);
+
+  trackpadInitialized = true;
+}
+
+void updateTransactionModeDisplay()
+{
+  // Clear the mode display area - positioned on the right side, smaller
+  tft.fillRect(170, 30, 70, 18, TFT_BLACK);
+
+  // Display current mode with appropriate color
+  if (isWithdrawMode)
+  {
+    tft.fillRoundRect(170, 30, 70, 18, 3, WITHDRAW_COLOR);
+    tft.setTextColor(TEXT_PRIMARY, WITHDRAW_COLOR);
+    tft.setTextSize(1);
+    tft.drawString("WITHDRAW", 175, 36);
+  }
+  else
+  {
+    tft.fillRoundRect(170, 30, 70, 18, 3, DEPOSIT_COLOR);
+    tft.setTextColor(TEXT_PRIMARY, DEPOSIT_COLOR);
+    tft.setTextSize(1);
+    tft.drawString("DEPOSIT", 180, 36);
+  }
+}
+
+void drawTrackpad()
+{
+  int keyW = 25; // Even smaller width
+  int keyH = 20; // Even smaller height
+  int keyRadius = 2;
+  int startX = (320 - (4 * keyW + 3 * 3)) / 2; // Center the 4-column trackpad with minimal spacing
+  int startY = 110;                            // Moved up more
+  int keySpacing = 3;                          // Minimal spacing
+
+  for (int y = 0; y < 4; y++)
+  {
+    for (int x = 0; x < 4; x++)
+    {
+      drawSingleTrackpadKey(x, y, keyW, keyH, keyRadius, startX, startY, keySpacing);
+    }
+  }
+}
+
+void drawSingleTrackpadKey(int x, int y, int keyW, int keyH, int keyRadius, int startX, int startY, int keySpacing)
+{
+  int posX = startX + x * (keyW + keySpacing);
+  int posY = startY + y * (keyH + keySpacing);
+
+  char key = trackpadKeys[y][x];
+  bool isSelected = (x == trackpadCursorX && y == trackpadCursorY);
+
+  // Determine key colors based on function
+  uint16_t keyBg, keyBorder, textColor;
+  bool isSpecialKey = false;
+
+  if (key == 'W' || key == 'D' || key == 'C' || key == 'E')
+  {
+    isSpecialKey = true;
+  }
+
+  if (isSelected)
+  {
+    keyBg = KEY_PRESSED;
+    keyBorder = 0x7BEF;
+    textColor = TEXT_PRIMARY;
+  }
+  else if (isSpecialKey)
+  {
+    if (key == 'W')
+    {
+      keyBg = WITHDRAW_COLOR;
+      keyBorder = 0xC000;
+    }
+    else if (key == 'D')
+    {
+      keyBg = DEPOSIT_COLOR;
+      keyBorder = 0x05C0;
+    }
+    else
+    {
+      keyBg = KEY_SPECIAL;
+      keyBorder = 0x4A49;
+    }
+    textColor = TEXT_PRIMARY;
+  }
+  else
+  {
+    keyBg = KEY_NORMAL;
+    keyBorder = 0x6B4D;
+    textColor = TEXT_PRIMARY;
+  }
+
+  // Clear the area first
+  tft.fillRect(posX - 1, posY - 1, keyW + 2, keyH + 2, TFT_BLACK);
+
+  // Draw key - no shadow for very small keys
+  tft.fillRoundRect(posX, posY, keyW, keyH, keyRadius, keyBg);
+  tft.drawRoundRect(posX, posY, keyW, keyH, keyRadius, keyBorder);
+
+  // Add simple highlight for selected key
+  if (isSelected)
+  {
+    tft.drawRoundRect(posX + 1, posY + 1, keyW - 2, keyH - 2, keyRadius - 1, 0x9CF3);
+  }
+
+  // Draw key label - very small text for tiny keys
+  tft.setTextColor(textColor, keyBg);
+  tft.setTextSize(1);
+
+  // Calculate text position for centering
+  int textX = posX + keyW / 2 - 3;
+  int textY = posY + keyH / 2 - 4;
+
+  // All keys use single character labels for tiny size
+  tft.drawChar(key, textX, textY);
+}
+
+void updateTrackpadAmountDisplay()
+{
+  // Clear and redraw the amount input area
+  tft.fillRoundRect(10, 53, 300, 22, 3, INPUT_BG);
+  tft.drawRoundRect(10, 53, 300, 22, 3, ACCENT_COLOR);
+
+  // Display dollar sign and amount
+  String displayAmount = "$" + trackpadAmount;
+  if (trackpadAmount.length() == 0)
+  {
+    displayAmount = "$0.00";
+  }
+
+  tft.setTextColor(TEXT_PRIMARY, INPUT_BG);
+  tft.setTextSize(1);
+  tft.drawString(displayAmount, 15, 60);
+
+  // Draw cursor - smaller
+  int cursorPos = 15 + displayAmount.length() * 6;
+  if ((millis() / 500) % 2 == 0)
+  {
+    tft.fillRect(cursorPos, 60, 1, 10, TEXT_PRIMARY);
+  }
+  else
+  {
+    tft.fillRect(cursorPos, 60, 1, 10, INPUT_BG);
+  }
+}
+
+void updateTrackpadCursor()
+{
+  // Trackpad key dimensions - updated to match smaller size
+  int keyW = 25;
+  int keyH = 20;
+  int keyRadius = 2;
+  int startX = (320 - (4 * keyW + 3 * 3)) / 2;
+  int startY = 110;
+  int keySpacing = 3;
+
+  // Redraw the previously selected key
+  drawSingleTrackpadKey(lastTrackpadCursorX, lastTrackpadCursorY, keyW, keyH, keyRadius, startX, startY, keySpacing);
+
+  // Redraw the newly selected key
+  drawSingleTrackpadKey(trackpadCursorX, trackpadCursorY, keyW, keyH, keyRadius, startX, startY, keySpacing);
+
+  // Update the last cursor position
+  lastTrackpadCursorX = trackpadCursorX;
+  lastTrackpadCursorY = trackpadCursorY;
+}
+
+void processTransaction()
+{
+  float amount = trackpadAmount.toFloat();
+  float balance = accountBalance.toFloat();
+
+  if (amount <= 0)
+  {
+    showTransactionMessage("Invalid amount!", 0xF800);
+    return;
+  }
+
+  if (isWithdrawMode && amount > balance)
+  {
+    showTransactionMessage("Insufficient funds!", 0xF800);
+    return;
+  }
+
+  // Show PIN entry screen
+  enteredPIN = "";
+  pinTransactionIsWithdraw = isWithdrawMode;
+  isAwaitingPIN = true;
+  cursorX = 1; // Start at middle position
+  cursorY = 0;
+  lastCursorX = 1;
+  lastCursorY = 0;
+  keyboardInitialized = false;
+  currentScreen = PIN_INPUT;
+  drawPINScreen();
+}
+
+void showTransactionMessage(String message, uint16_t color)
+{
+  tft.fillRect(10, 80, 300, 12, TFT_BLACK);
+  tft.setTextColor(color, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.drawString(message, 10, 82);
+  delay(2000);
+  tft.fillRect(10, 80, 300, 12, TFT_BLACK); // Clear message
+  // Restore instruction text
+  tft.setTextColor(TEXT_SECONDARY, TFT_BLACK);
+  tft.drawString("W=Withdraw D=Deposit C=Clear E=Execute", 10, 82);
+}
+
+void handleTrackpadInput()
+{
+  // Update display regularly for cursor blinking
+  static unsigned long lastDisplayUpdate = 0;
+  if (millis() - lastDisplayUpdate > 50)
+  {
+    updateTrackpadAmountDisplay();
+    lastDisplayUpdate = millis();
+  }
+
+  // Handle navigation
+  if (digitalRead(WIO_5S_UP) == LOW)
+  {
+    trackpadCursorY = (trackpadCursorY - 1 + 4) % 4;
+    if (trackpadInitialized)
+    {
+      updateTrackpadCursor();
+    }
+    delay(150);
+  }
+  if (digitalRead(WIO_5S_DOWN) == LOW)
+  {
+    trackpadCursorY = (trackpadCursorY + 1) % 4;
+    if (trackpadInitialized)
+    {
+      updateTrackpadCursor();
+    }
+    delay(150);
+  }
+  if (digitalRead(WIO_5S_LEFT) == LOW)
+  {
+    trackpadCursorX = (trackpadCursorX - 1 + 4) % 4;
+    if (trackpadInitialized)
+    {
+      updateTrackpadCursor();
+    }
+    delay(150);
+  }
+  if (digitalRead(WIO_5S_RIGHT) == LOW)
+  {
+    trackpadCursorX = (trackpadCursorX + 1) % 4;
+    if (trackpadInitialized)
+    {
+      updateTrackpadCursor();
+    }
+    delay(150);
+  }
+
+  // Handle key press
+  if (digitalRead(WIO_5S_PRESS) == LOW)
+  {
+    char key = trackpadKeys[trackpadCursorY][trackpadCursorX];
+
+    if (key == 'W')
+    {
+      // Switch to withdraw mode
+      isWithdrawMode = true;
+      updateTransactionModeDisplay();
+    }
+    else if (key == 'D')
+    {
+      // Switch to deposit mode
+      isWithdrawMode = false;
+      updateTransactionModeDisplay();
+    }
+    else if (key == 'C')
+    {
+      // Clear amount
+      trackpadAmount = "";
+      updateTrackpadAmountDisplay();
+    }
+    else if (key == 'E')
+    {
+      // Execute transaction (now requires PIN)
+      processTransaction();
+    }
+    else if (key >= '0' && key <= '9' || key == '.')
+    {
+      // Add digit or decimal point
+      if (key == '.' && trackpadAmount.indexOf('.') >= 0)
+      {
+        // Don't add multiple decimal points
+      }
+      else
+      {
+        trackpadAmount += key;
+        updateTrackpadAmountDisplay();
+      }
+    }
+    else if (key == '#')
+    {
+      // Use # as backspace for trackpad
+      if (trackpadAmount.length() > 0)
+      {
+        trackpadAmount.remove(trackpadAmount.length() - 1);
+        updateTrackpadAmountDisplay();
+      }
+    }
+    delay(200);
+  }
+
+  // Handle function buttons
+  if (digitalRead(WIO_KEY_A) == LOW)
+  {
+    // Clear amount
+    trackpadAmount = "";
+    updateTrackpadAmountDisplay();
+    delay(200);
+  }
+
+  if (digitalRead(WIO_KEY_B) == LOW)
+  {
+    // Go back to WiFi screen
+    currentScreen = WIFI_SCAN;
+    drawWiFiScreen();
+    delay(300);
+  }
+
+  if (digitalRead(WIO_KEY_C) == LOW)
+  {
+    // Process transaction (now requires PIN)
+    processTransaction();
+    delay(300);
+  }
 }
