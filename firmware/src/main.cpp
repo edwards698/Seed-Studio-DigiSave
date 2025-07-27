@@ -1075,10 +1075,10 @@ void drawPINScreen()
   updatePINDisplay();
 
   // PIN Numeric keypad - 3x4 grid plus special keys
-  int keyW = 32; // Smaller width
-  int keyH = 22; // Smaller height
-  int keyRadius = 3;
-  int keySpacing = 4;
+  int keyW = 24; // Even smaller width
+  int keyH = 16; // Even smaller height
+  int keyRadius = 2;
+  int keySpacing = 2;
   int totalKeyboardWidth = 3 * keyW + 2 * keySpacing;
   int startX = (320 - totalKeyboardWidth) / 2;
   int startY = 85;
@@ -1226,10 +1226,10 @@ void redrawSinglePINKey(int x, int y)
       {'7', '8', '9'},
       {'C', '0', '<'},
       {'B', 'E', 'S'}};
-  int keyW = 32;
-  int keyH = 22;
-  int keyRadius = 3;
-  int keySpacing = 4;
+  int keyW = 24;
+  int keyH = 16;
+  int keyRadius = 2;
+  int keySpacing = 2;
   int totalKeyboardWidth = 3 * keyW + 2 * keySpacing;
   int startX = (320 - totalKeyboardWidth) / 2;
   int startY = 85;
