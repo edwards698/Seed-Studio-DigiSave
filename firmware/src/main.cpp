@@ -1075,13 +1075,13 @@ void drawPINScreen()
   updatePINDisplay();
 
   // PIN Numeric keypad - 3x4 grid plus special keys
-  int keyW = 50;
-  int keyH = 35;
-  int keyRadius = 5;
-  int totalKeyboardWidth = 3 * keyW + 2 * 8; // 3 keys + 2 spaces
+  int keyW = 32; // Smaller width
+  int keyH = 22; // Smaller height
+  int keyRadius = 3;
+  int keySpacing = 4;
+  int totalKeyboardWidth = 3 * keyW + 2 * keySpacing;
   int startX = (320 - totalKeyboardWidth) / 2;
   int startY = 85;
-  int keySpacing = 8;
 
   // PIN keypad layout (3x4 plus special keys)
   char pinKeys[5][3] = {{'1', '2', '3'},
@@ -1096,14 +1096,10 @@ void drawPINScreen()
     {
       int posX = startX + x * (keyW + keySpacing);
       int posY = startY + y * (keyH + keySpacing);
-
       char key = pinKeys[y][x];
-
-      // Determine key colors and style
       uint16_t keyBg, keyBorder, textColor;
       bool isSelected = (x == cursorX && y == cursorY);
       bool isSpecialKey = (key == 'C' || key == '<' || key == 'B' || key == 'E' || key == 'S');
-
       if (isSelected)
       {
         keyBg = KEY_PRESSED;
@@ -1122,63 +1118,49 @@ void drawPINScreen()
         keyBorder = 0x6B4D;
         textColor = TEXT_PRIMARY;
       }
-
       // Draw key with shadow effect
       if (!isSelected)
       {
-        tft.fillRoundRect(posX + 2, posY + 3, keyW, keyH, keyRadius, 0x2104);
+        tft.fillRoundRect(posX + 1, posY + 1, keyW, keyH, keyRadius, 0x2104);
       }
-
       tft.fillRoundRect(posX, posY, keyW, keyH, keyRadius, keyBg);
       tft.drawRoundRect(posX, posY, keyW, keyH, keyRadius, keyBorder);
-
       // Add subtle gradient effect for selected key
       if (isSelected)
       {
         tft.drawRoundRect(posX + 1, posY + 1, keyW - 2, keyH - 2, keyRadius - 1, 0x9CF3);
       }
-
       // Draw key label (centered)
       tft.setTextColor(textColor, keyBg);
-      tft.setTextSize(2);
-
-      // Calculate text position for centering
+      tft.setTextSize(1);
       int textX = posX + keyW / 2;
-      int textY = posY + keyH / 2 - 8;
-
-      // Special key labels
+      int textY = posY + keyH / 2 - 5;
       if (key == 'C')
       {
-        tft.setTextSize(1);
-        tft.drawString("CLR", textX - 12, textY + 4);
+        tft.drawString("CLR", textX - 10, textY + 2);
       }
       else if (key == '<')
       {
-        tft.setTextSize(1);
-        tft.drawString("DEL", textX - 12, textY + 4);
+        tft.drawString("DEL", textX - 10, textY + 2);
       }
       else if (key == 'B')
       {
-        tft.setTextSize(1);
-        tft.drawString("BACK", textX - 15, textY + 4);
+        tft.drawString("BACK", textX - 13, textY + 2);
       }
       else if (key == 'E')
       {
-        tft.setTextSize(1);
-        tft.drawString("ENTER", textX - 18, textY + 4);
+        tft.drawString("ENTR", textX - 13, textY + 2);
       }
       else if (key == 'S')
       {
-        // This key is not used in PIN mode, make it inactive
         keyBg = 0x2104;
         tft.fillRoundRect(posX, posY, keyW, keyH, keyRadius, keyBg);
-        tft.setTextSize(1);
         tft.setTextColor(0x4208, keyBg);
-        tft.drawString("---", textX - 12, textY + 4);
+        tft.drawString("---", textX - 8, textY + 2);
       }
       else
       {
-        tft.drawChar(key, textX - 8, textY);
+        tft.drawChar(key, textX - 5, textY);
       }
     }
   }
@@ -1222,8 +1204,6 @@ void updatePINCursor()
   int textWidth = enteredPIN.length() * 12;
   int centerX = 160 - textWidth / 2;
   int cursorPos = centerX + textWidth;
-
-  // Blink cursor
   if ((millis() / 500) % 2 == 0)
   {
     tft.fillRect(cursorPos, 55, 2, 15, TEXT_PRIMARY); // Show cursor
@@ -1231,6 +1211,93 @@ void updatePINCursor()
   else
   {
     tft.fillRect(cursorPos, 55, 2, 15, INPUT_BG); // Hide cursor
+  }
+
+  // ...existing code...
+}
+
+// Helper to redraw a single PIN key (smaller, no flicker)
+void redrawSinglePINKey(int x, int y)
+{
+  // PIN keypad layout (3x4 plus special keys)
+  static const char pinKeys[5][3] = {
+      {'1', '2', '3'},
+      {'4', '5', '6'},
+      {'7', '8', '9'},
+      {'C', '0', '<'},
+      {'B', 'E', 'S'}};
+  int keyW = 32;
+  int keyH = 22;
+  int keyRadius = 3;
+  int keySpacing = 4;
+  int totalKeyboardWidth = 3 * keyW + 2 * keySpacing;
+  int startX = (320 - totalKeyboardWidth) / 2;
+  int startY = 85;
+  int posX = startX + x * (keyW + keySpacing);
+  int posY = startY + y * (keyH + keySpacing);
+  char key = pinKeys[y][x];
+  uint16_t keyBg, keyBorder, textColor;
+  bool isSelected = (x == cursorX && y == cursorY);
+  bool isSpecialKey = (key == 'C' || key == '<' || key == 'B' || key == 'E' || key == 'S');
+  if (isSelected)
+  {
+    keyBg = KEY_PRESSED;
+    keyBorder = 0x7BEF;
+    textColor = TEXT_PRIMARY;
+  }
+  else if (isSpecialKey)
+  {
+    keyBg = KEY_SPECIAL;
+    keyBorder = 0x4A49;
+    textColor = TEXT_PRIMARY;
+  }
+  else
+  {
+    keyBg = KEY_NORMAL;
+    keyBorder = 0x6B4D;
+    textColor = TEXT_PRIMARY;
+  }
+  // Draw key with shadow effect
+  if (!isSelected)
+  {
+    tft.fillRoundRect(posX + 1, posY + 1, keyW, keyH, keyRadius, 0x2104);
+  }
+  tft.fillRoundRect(posX, posY, keyW, keyH, keyRadius, keyBg);
+  tft.drawRoundRect(posX, posY, keyW, keyH, keyRadius, keyBorder);
+  if (isSelected)
+  {
+    tft.drawRoundRect(posX + 1, posY + 1, keyW - 2, keyH - 2, keyRadius - 1, 0x9CF3);
+  }
+  tft.setTextColor(textColor, keyBg);
+  tft.setTextSize(1);
+  int textX = posX + keyW / 2;
+  int textY = posY + keyH / 2 - 5;
+  if (key == 'C')
+  {
+    tft.drawString("CLR", textX - 10, textY + 2);
+  }
+  else if (key == '<')
+  {
+    tft.drawString("DEL", textX - 10, textY + 2);
+  }
+  else if (key == 'B')
+  {
+    tft.drawString("BACK", textX - 13, textY + 2);
+  }
+  else if (key == 'E')
+  {
+    tft.drawString("ENTR", textX - 13, textY + 2);
+  }
+  else if (key == 'S')
+  {
+    uint16_t inactiveBg = 0x2104;
+    tft.fillRoundRect(posX, posY, keyW, keyH, keyRadius, inactiveBg);
+    tft.setTextColor(0x4208, inactiveBg);
+    tft.drawString("---", textX - 8, textY + 2);
+  }
+  else
+  {
+    tft.drawChar(key, textX - 5, textY);
   }
 }
 
@@ -1253,40 +1320,74 @@ void handlePINInput()
       {'B', 'E', 'S'}  // B=Back, E=Enter, S=Show/Hide (not used for PIN)
   };
 
+  // Only redraw affected keys to prevent flicker
+  static int lastCursorX_PIN = 0, lastCursorY_PIN = 0;
   if (digitalRead(WIO_5S_UP) == LOW)
   {
+    int prevX = cursorX, prevY = cursorY;
     cursorY = (cursorY - 1 + 5) % 5;
     if (keyboardInitialized)
     {
-      drawPINScreen(); // Redraw entire screen for simplicity
+      redrawSinglePINKey(prevX, prevY);
+      redrawSinglePINKey(cursorX, cursorY);
     }
+    else
+    {
+      drawPINScreen();
+    }
+    lastCursorX_PIN = cursorX;
+    lastCursorY_PIN = cursorY;
     delay(150);
   }
   if (digitalRead(WIO_5S_DOWN) == LOW)
   {
+    int prevX = cursorX, prevY = cursorY;
     cursorY = (cursorY + 1) % 5;
     if (keyboardInitialized)
     {
-      drawPINScreen(); // Redraw entire screen for simplicity
+      redrawSinglePINKey(prevX, prevY);
+      redrawSinglePINKey(cursorX, cursorY);
     }
+    else
+    {
+      drawPINScreen();
+    }
+    lastCursorX_PIN = cursorX;
+    lastCursorY_PIN = cursorY;
     delay(150);
   }
   if (digitalRead(WIO_5S_LEFT) == LOW)
   {
+    int prevX = cursorX, prevY = cursorY;
     cursorX = (cursorX - 1 + 3) % 3;
     if (keyboardInitialized)
     {
-      drawPINScreen(); // Redraw entire screen for simplicity
+      redrawSinglePINKey(prevX, prevY);
+      redrawSinglePINKey(cursorX, cursorY);
     }
+    else
+    {
+      drawPINScreen();
+    }
+    lastCursorX_PIN = cursorX;
+    lastCursorY_PIN = cursorY;
     delay(150);
   }
   if (digitalRead(WIO_5S_RIGHT) == LOW)
   {
+    int prevX = cursorX, prevY = cursorY;
     cursorX = (cursorX + 1) % 3;
     if (keyboardInitialized)
     {
-      drawPINScreen(); // Redraw entire screen for simplicity
+      redrawSinglePINKey(prevX, prevY);
+      redrawSinglePINKey(cursorX, cursorY);
     }
+    else
+    {
+      drawPINScreen();
+    }
+    lastCursorX_PIN = cursorX;
+    lastCursorY_PIN = cursorY;
     delay(150);
   }
 
