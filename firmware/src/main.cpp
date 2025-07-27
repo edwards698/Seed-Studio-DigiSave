@@ -1,5 +1,9 @@
+
+
 #include <rpcWiFi.h>
 #include <TFT_eSPI.h>
+#include <HTTPClient.h>
+#include "firebase_helper.h"
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -24,7 +28,7 @@ bool symbolsMode = false;  // Toggle for symbols/letters mode
 
 // PIN authentication variables
 String enteredPIN = "";
-String correctPIN = "2024";           // Hardcoded PIN
+String correctPIN = "1111";           // Hardcoded PIN
 bool showPINAsterisks = true;         // Always show asterisks for PIN
 bool isAwaitingPIN = false;           // Flag to track if we're waiting for PIN
 bool pinTransactionIsWithdraw = true; // Track transaction type for PIN entry
@@ -79,6 +83,20 @@ int lastTrackpadCursorX = 0;
 int lastTrackpadCursorY = 0;
 bool trackpadInitialized = false;
 bool isWithdrawMode = true; // true for withdraw, false for deposit
+
+// Firebase configuration for reference (from web):
+// const firebaseConfig = {
+//   apiKey: "AIzaSyDxb-BqKYJ2pNvU2crCoR3ERdYOqrLkn2U",
+//   authDomain: "digisave-21992.firebaseapp.com",
+//   databaseURL: "https://digisave-21992-default-rtdb.europe-west1.firebasedatabase.app",
+//   projectId: "digisave-21992",
+//   storageBucket: "digisave-21992.firebasestorage.app",
+//   messagingSenderId: "939533456242",
+//   appId: "1:939533456242:web:11f4d0b69374ec9a1b03eb",
+//   measurementId: "G-GBTQ3P7D44"
+// };
+
+// Firebase helper functions are now in firebase_helper.h/cpp
 
 // Trackpad layout (4x4 grid including function keys)
 char trackpadKeys[4][4] = {
@@ -934,6 +952,7 @@ void connectToWiFi()
 
   if (WiFi.status() == WL_CONNECTED)
   {
+
     // Go directly to banking terminal after successful WiFi connection
     trackpadAmount = "";
     trackpadCursorX = 0;
@@ -1359,20 +1378,24 @@ void executeTransaction(float amount, bool isWithdraw)
   {
     if (amount > balance)
     {
-      // This shouldn't happen as we check before PIN entry, but just in case
+      showTransactionMessage("Insufficient funds!", WITHDRAW_COLOR);
       return;
     }
     balance -= amount;
     accountBalance = String(balance, 2);
+    sendTransactionToFirebase("withdraw", amount, balance);
+    showTransactionMessage("Withdrawal successful!", DEPOSIT_COLOR);
   }
   else
   {
     balance += amount;
     accountBalance = String(balance, 2);
+    sendTransactionToFirebase("deposit", amount, balance);
+    showTransactionMessage("Deposit successful!", DEPOSIT_COLOR);
   }
-
-  // Clear amount after successful transaction
+  updateBalanceInFirebase(balance);
   trackpadAmount = "";
+  delay(2000);
 }
 
 // ────────────── Trackpad Banking Screen ──────────────
