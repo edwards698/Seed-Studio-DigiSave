@@ -2,13 +2,15 @@
 #define FIREBASE_HELPER_H
 
 #include <Arduino.h>
-#include <rpcWiFi.h>
+#include <WiFi.h>
 #include <HTTPClient.h>
 
-#define FIREBASE_DATABASE_URL "https://digisave-21992-default-rtdb.europe-west1.firebasedatabase.app"
-
-unsigned long getTimestamp();
+// Function declarations
+void logTransactionToFirestore(String type, double amount, double balanceAfter);
+void logTransactionToFirestoreWithAPIKey(String type, double amount, double balanceAfter);
 void sendTransactionToFirebase(String type, float amount, float newBalance);
 void updateBalanceInFirebase(float balance);
+unsigned long getTimestamp();
+String getCurrentISOTimestamp();
 
-#endif // FIREBASE_HELPER_H
+#endif

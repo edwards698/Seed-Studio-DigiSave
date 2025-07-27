@@ -122,7 +122,7 @@ bool isWithdrawMode = true; // true for withdraw, false for deposit
 //   authDomain: "digisave-21992.firebaseapp.com",
 //   databaseURL: "https://digisave-21992-default-rtdb.europe-west1.firebasedatabase.app",
 //   projectId: "digisave-21992",
-//   storageBucket: "digisave-21992.firebasestorage.app",
+//   storageBucket: "digisave-21992.appspot.com",
 //   messagingSenderId: "939533456242",
 //   appId: "1:939533456242:web:11f4d0b69374ec9a1b03eb",
 //   measurementId: "G-GBTQ3P7D44"
@@ -1543,6 +1543,7 @@ void executeTransaction(float amount, bool isWithdraw)
     balance -= amount;
     accountBalance = String(balance, 2);
     sendTransactionToFirebase("withdraw", amount, balance);
+    logTransactionToFirestore("withdraw", amount, balance);
     showTransactionMessage("Withdrawal successful!", DEPOSIT_COLOR);
   }
   else
@@ -1550,6 +1551,7 @@ void executeTransaction(float amount, bool isWithdraw)
     balance += amount;
     accountBalance = String(balance, 2);
     sendTransactionToFirebase("deposit", amount, balance);
+    logTransactionToFirestore("deposit", amount, balance);
     showTransactionMessage("Deposit successful!", DEPOSIT_COLOR);
   }
   updateBalanceInFirebase(balance);
