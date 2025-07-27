@@ -4,6 +4,38 @@
 #include <TFT_eSPI.h>
 #include <HTTPClient.h>
 #include "firebase_helper.h"
+#include <Seeed_FS.h>
+#include <SD/Seeed_SD.h>
+
+// WiFi credentials storage using Seeed FS (SPI Flash)
+void saveWiFiCredentials(const String &ssid, const String &password)
+{
+  File f = SD.open("/wifi.txt", FILE_WRITE);
+  if (f)
+  {
+    f.println(ssid);
+    f.println(password);
+    f.close();
+  }
+}
+
+void loadWiFiCredentials(String &ssid, String &password)
+{
+  File f = SD.open("/wifi.txt", FILE_READ);
+  if (f)
+  {
+    ssid = f.readStringUntil('\n');
+    ssid.trim();
+    password = f.readStringUntil('\n');
+    password.trim();
+    f.close();
+  }
+  else
+  {
+    ssid = "";
+    password = "";
+  }
+}
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -145,6 +177,12 @@ void setup()
   pinMode(WIO_KEY_A, INPUT);
   pinMode(WIO_KEY_C, INPUT);
 
+  // Mount SPI Flash (SD emulation)
+  if (!SD.begin())
+  {
+    Serial.println("SD (SPI Flash) mount failed!");
+  }
+
   tft.begin();
   tft.setRotation(3);
   tft.setTextSize(2);
@@ -154,6 +192,26 @@ void setup()
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(1000);
+
+  // Try to load WiFi credentials and go directly to banking terminal if found
+  String savedSSID, savedPass;
+  loadWiFiCredentials(savedSSID, savedPass);
+  if (savedSSID.length() > 0 && savedPass.length() > 0)
+  {
+    selectedSSID = savedSSID;
+    inputPassword = savedPass;
+    // Optionally, you could check WiFi connection here, but as requested, go straight to banking
+    trackpadAmount = "";
+    trackpadCursorX = 0;
+    trackpadCursorY = 0;
+    lastTrackpadCursorX = 0;
+    lastTrackpadCursorY = 0;
+    trackpadInitialized = false;
+    isWithdrawMode = true; // Default to withdraw
+    currentScreen = TRACKPAD_BANKING;
+    drawTrackpadScreen();
+    return;
+  }
 
   totalNetworks = WiFi.scanNetworks();
   drawWiFiScreen();
@@ -952,6 +1010,8 @@ void connectToWiFi()
 
   if (WiFi.status() == WL_CONNECTED)
   {
+    // Save credentials to EEPROM
+    saveWiFiCredentials(selectedSSID, inputPassword);
 
     // Go directly to banking terminal after successful WiFi connection
     trackpadAmount = "";
@@ -1024,13 +1084,11 @@ void drawPINScreen()
   int keySpacing = 8;
 
   // PIN keypad layout (3x4 plus special keys)
-  char pinKeys[5][3] = {
-      {'1', '2', '3'},
-      {'4', '5', '6'},
-      {'7', '8', '9'},
-      {'C', '0', '<'}, // C=Clear, <=Backspace
-      {'B', 'E', 'S'}  // B=Back, E=Enter, S=Show/Hide (not used for PIN)
-  };
+  char pinKeys[5][3] = {{'1', '2', '3'},
+                        {'4', '5', '6'},
+                        {'7', '8', '9'},
+                        {'C', '0', '<'},
+                        {'B', 'E', 'S'}};
 
   for (int y = 0; y < 5; y++)
   {
