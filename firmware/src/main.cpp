@@ -146,7 +146,6 @@ void connectToWiFi();
 void handleTrackpadInput();
 void handlePINInput();
 void createNewUserAccount();
-void logTransactionToFirestore(String type, double amount, double balanceAfter);
 void drawAllNetworks();
 void drawSingleNetwork(int index);
 void drawSignalBars(int x, int y, int rssi, uint16_t color);
@@ -1542,16 +1541,20 @@ void executeTransaction(float amount, bool isWithdraw)
     }
     balance -= amount;
     accountBalance = String(balance, 2);
+
+    // Send to Firebase Realtime Database
     sendTransactionToFirebase("withdraw", amount, balance);
-    logTransactionToFirestore("withdraw", amount, balance);
+
     showTransactionMessage("Withdrawal successful!", DEPOSIT_COLOR);
   }
   else
   {
     balance += amount;
     accountBalance = String(balance, 2);
+
+    // Send to Firebase Realtime Database
     sendTransactionToFirebase("deposit", amount, balance);
-    logTransactionToFirestore("deposit", amount, balance);
+
     showTransactionMessage("Deposit successful!", DEPOSIT_COLOR);
   }
   updateBalanceInFirebase(balance);
@@ -1728,9 +1731,8 @@ void drawSingleTrackpadKey(int x, int y, int keyW, int keyH, int keyRadius, int 
 
 void updateTrackpadAmountDisplay()
 {
-  // Clear and redraw the amount input area
-  tft.fillRoundRect(10, 53, 300, 22, 3, INPUT_BG);
-  tft.drawRoundRect(10, 53, 300, 22, 3, ACCENT_COLOR);
+  static String lastDisplayAmount = "";
+  static bool inputFieldInitialized = false;
 
   // Display dollar sign and amount
   String displayAmount = "$" + trackpadAmount;
@@ -1739,19 +1741,23 @@ void updateTrackpadAmountDisplay()
     displayAmount = "$0.00";
   }
 
-  tft.setTextColor(TEXT_PRIMARY, INPUT_BG);
-  tft.setTextSize(1);
-  tft.drawString(displayAmount, 15, 60);
+  // Only redraw if amount changed or first time
+  if (displayAmount != lastDisplayAmount || !inputFieldInitialized)
+  {
+    // Clear and redraw the amount input area
+    tft.fillRoundRect(10, 53, 300, 22, 3, INPUT_BG);
+    tft.drawRoundRect(10, 53, 300, 22, 3, ACCENT_COLOR);
 
-  // Draw cursor - smaller
-  int cursorPos = 15 + displayAmount.length() * 6;
-  if ((millis() / 500) % 2 == 0)
-  {
+    tft.setTextColor(TEXT_PRIMARY, INPUT_BG);
+    tft.setTextSize(1);
+    tft.drawString(displayAmount, 15, 60);
+
+    // Draw initial cursor
+    int cursorPos = 15 + displayAmount.length() * 6;
     tft.fillRect(cursorPos, 60, 1, 10, TEXT_PRIMARY);
-  }
-  else
-  {
-    tft.fillRect(cursorPos, 60, 1, 10, INPUT_BG);
+
+    lastDisplayAmount = displayAmount;
+    inputFieldInitialized = true;
   }
 }
 
@@ -1821,12 +1827,27 @@ void showTransactionMessage(String message, uint16_t color)
 
 void handleTrackpadInput()
 {
-  // Update display regularly for cursor blinking
-  static unsigned long lastDisplayUpdate = 0;
-  if (millis() - lastDisplayUpdate > 50)
+  // Update cursor blinking without full redraw
+  static unsigned long lastCursorUpdate = 0;
+  if (millis() - lastCursorUpdate > 500)
   {
-    updateTrackpadAmountDisplay();
-    lastDisplayUpdate = millis();
+    // Only update the cursor position, not the entire display
+    String displayAmount = "$" + trackpadAmount;
+    if (trackpadAmount.length() == 0)
+    {
+      displayAmount = "$0.00";
+    }
+
+    int cursorPos = 15 + displayAmount.length() * 6;
+    if ((millis() / 500) % 2 == 0)
+    {
+      tft.fillRect(cursorPos, 60, 1, 10, TEXT_PRIMARY);
+    }
+    else
+    {
+      tft.fillRect(cursorPos, 60, 1, 10, INPUT_BG);
+    }
+    lastCursorUpdate = millis();
   }
 
   // Handle navigation

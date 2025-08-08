@@ -6,11 +6,8 @@
 #include <HTTPClient.h>
 
 // Function declarations
-void logTransactionToFirestore(String type, double amount, double balanceAfter);
-void logTransactionToFirestoreWithAPIKey(String type, double amount, double balanceAfter);
 void sendTransactionToFirebase(String type, float amount, float newBalance);
 void updateBalanceInFirebase(float balance);
 unsigned long getTimestamp();
-String getCurrentISOTimestamp();
 
 #endif
