@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "939533456242",
+    "firebase_url": "https://digisave-21992-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "digisave-21992",
+    "storage_bucket": "digisave-21992.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:939533456242:android:ee8c3294512cce0f1b03eb",
+        "android_client_info": {
+          "package_name": "com.example.digi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWKUZVhMHvAWTeQk13VZcpyPFnXLNiPDE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
