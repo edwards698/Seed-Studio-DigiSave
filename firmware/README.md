@@ -15,7 +15,7 @@ PlatformIO is a modern development environment for embedded systems. It works as
 #### **Clone the Firmware Repo**
 
 ```sh
-git clone https://github.com/yourusername/DigiSave.git
+git clone https://github.com/edwards698/DigiSave.git
 cd DigiSave/firmware
 ```
 
