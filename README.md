@@ -13,7 +13,7 @@ Other components (e.g., sensors, relays, power supplies) can be found on Seeed S
 
 You can download the DigiSave app for your device here:
 
-- **Download the APK** [Here](https://play.google.com/store/apps)
+- **Download the APK** [Here](https://www.dropbox.com/scl/fo/axe60a9auwhj9i7py7ba3/AB-713sxKs7kODNP4PAcmEU?rlkey=jzn2t8zk9k257u6u9aoaqulx1&st=w4b7ny4u&dl=0)
 
 If you are a developer or tester, you can also build and run the app from source using Flutter (see the main README for instructions) [Here](https://play.google.com/store/apps)
 
