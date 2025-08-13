@@ -15,7 +15,7 @@ You can download the DigiSave app for your device here:
 
 - **Download the APK** [Here](https://play.google.com/store/apps)
 
-If you are a developer or tester, you can also build and run the app from source using Flutter (see the main README for instructions).
+If you are a developer or tester, you can also build and run the app from source using Flutter (see the main README for instructions).[Here](https://play.google.com/store/apps)
 
 ## Technology Stack Overview
 
